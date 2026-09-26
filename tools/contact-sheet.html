@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sumi Contact Sheet</title>
+<link href="https://fonts.googleapis.com/css2?family=Yuji+Syuku&family=Yuji+Mai&family=Zen+Kurenaido&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#f4efe6;--fg:#26221c;--mute:#7a7266;--line:#d9d1c3;--miss:#d2462d;--extra:#2f6fd0;--both:#26221c;--paper:#fbf8f2}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,sans-serif;padding:24px 16px 48px}
+  h1{font-size:18px;margin:0 0 4px}
+  .sub{color:var(--mute);margin:0 0 16px}
+  .controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:20px}
+  .controls input{font:inherit;font-size:18px;width:7em;padding:4px 8px;border:1px solid var(--line);background:var(--paper)}
+  .controls button{font:inherit;padding:6px 12px;border:1px solid var(--fg);background:var(--fg);color:var(--bg);cursor:pointer}
+  .controls button:disabled{opacity:.4;cursor:default}
+  #status{color:var(--mute)}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;color:var(--mute);margin-bottom:20px}
+  .legend i{display:inline-block;width:12px;height:12px;vertical-align:-1px;margin-right:6px}
+  section{margin-bottom:28px}
+  h2{font-size:15px;margin:0 0 8px}
+  table{border-collapse:collapse}
+  th{font-weight:500;color:var(--mute);text-align:left;padding:0 8px 6px 0;font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  td{padding:0 8px 8px 0;vertical-align:top}
+  td.k{font-size:28px;padding-right:14px;vertical-align:middle}
+  canvas.cell{display:block;width:220px;height:220px;background:var(--paper);border:1px solid var(--line)}
+  .m{color:var(--mute);font-size:12px;font-variant-numeric:tabular-nums;vertical-align:middle;white-space:nowrap}
+  .m b{color:var(--fg);font-weight:600}
+  @media (max-width:760px){canvas.cell{width:28vw;height:28vw}}
+  #frame{width:800px;height:800px;border:1px solid var(--line);display:block;margin-top:8px}
+  details{color:var(--mute)}
+</style>
+</head>
+<body>
+<h1>Sumi contact sheet</h1>
+<p class="sub">Target is the font glyph laid out like the practice ghost. System is the fitted sweep replayed through the real brush and dried for 9 s. Diff compares ink masks.</p>
+
+<div class="controls">
+  <label>Kanji <input id="chars" value="永心道" maxlength="6"></label>
+  <button id="run" disabled>Render</button>
+  <button id="export" disabled title="Refit every sweep to its font and download a replacement public/sweeps.js">Export refit sweeps.js</button>
+  <span id="status">Loading brush…</span>
+</div>
+<div class="legend">
+  <span><i style="background:var(--both)"></i>both</span>
+  <span><i style="background:var(--miss)"></i>target only (missed)</span>
+  <span><i style="background:var(--extra)"></i>system only (spill)</span>
+</div>
+<div id="out"></div>
+
+<details open><summary>Live brush (must stay rendered while the sheet builds)</summary><iframe id="frame" src="../public/index.html?harness"></iframe></details>
+
+<script src="fit.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const frame = $('#frame'), out = $('#out'), status = $('#status'), run = $('#run');
+const INK_THRESHOLD = 0.5;   // darkness relative to bare paper that counts as ink
+
+const Q = new URLSearchParams(location.search);
+if (Q.get('chars')) $('#chars').value = Q.get('chars');
+frame.addEventListener('load', async () => {
+  const w = frame.contentWindow;
+  for (let i = 0; i < 100 && !w.__sumi; i++) await new Promise(r => setTimeout(r, 50));
+  if (!w.__sumi) { status.textContent = 'Brush harness did not start (WebGL 2 missing?).'; return; }
+  run.disabled = false; $('#export').disabled = false; status.textContent = 'Ready.';
+  render();
+});
+run.addEventListener('click', render);
+$('#export').addEventListener('click', async () => {
+  const text = await buildSweepsJs(frame.contentWindow);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], {type: 'text/javascript'}));
+  a.download = 'sweeps.js'; a.click();
+});
+
+async function render(){
+  const w = frame.contentWindow, styles = w.SUMI.styles;
+  const chars = [...$('#chars').value.trim()].filter(c => w.__sumi.glyphs.includes(c));
+  if (!chars.length) { status.textContent = 'None of those characters has a recorded sweep.'; return; }
+  run.disabled = true; out.textContent = '';
+  // the iframe's #guide is what defines the sheet box
+  w.document.querySelector('#guide').classList.add('on');
+  const only = (Q.get('styles') || '').split(',').filter(Boolean);
+  for (const key of Object.keys(styles).filter(k => !only.length || only.includes(k))){
+    const sec = document.createElement('section');
+    sec.dataset.key = key;
+    sec.innerHTML = `<h2>${styles[key].label}</h2><table><tr><th></th><th>Target</th><th>System</th><th>Diff</th><th></th></tr></table>`;
+    out.appendChild(sec);
+    const table = sec.querySelector('table');
+    for (const ch of chars){
+      status.textContent = `Rendering ${styles[key].label} · ${ch}…`;
+      let res;
+      try { res = await w.__sumi.render(key, ch, Q.get('fit') ? await fitted(w, key, ch) : {}); }
+      catch (err) { console.error(err); table.insertRow().innerHTML = `<td class="k">${ch}</td><td colspan="4" class="m">failed: ${err.message}</td>`; continue; }
+      const sys = cropSystem(res);
+      const tgt = await drawTarget(ch, res.font, sys.width);
+      const {diff, stats} = compare(tgt, sys);
+      const tr = table.insertRow();
+      tr.insertCell().outerHTML = `<td class="k">${ch}</td>`;
+      for (const c of [tgt, sys, diff]){ c.className = 'cell'; tr.insertCell().appendChild(c); }
+      tr.insertCell().outerHTML = `<td class="m">IoU <b>${stats.iou.toFixed(3)}</b><br>coverage ${pct(stats.recall)}<br>precision ${pct(stats.precision)}<br>missed ${pct(stats.miss)}<br>spill ${pct(stats.extra)}</td>`;
+    }
+  }
+  status.textContent = 'Done.'; run.disabled = false;
+}
+/* Refit the stored sweep to this style's font; radii go through a fixed Rmax as pressure. */
+const FIT_RMAX = 10;
+const FIT_STYLE = {mai: {edge: 0.25}};
+const FIT_SOURCE = 'syuku';   // the cleanest KanjiVG alignment; every style is refit from these paths
+async function fitted(w, key, ch){
+  const sw = await SumiFit.fitGlyph(w.SUMI.sweeps[FIT_SOURCE][ch], w.SUMI.styles[key].font, ch);
+  return {sweep: sw.map(s => s.map(([x, y, r]) => [x, y, r / FIT_RMAX])), style: Object.assign({Rmax: FIT_RMAX, kL: 0, ratio: 1, follow: 0}, FIT_STYLE[key])};
+}
+/* The whole replacement public/sweeps.js: every sweep refit, radii stored as pressure against Rmax,
+   and the fitted styles switched to the round footprint the fit assumes. */
+async function buildSweepsJs(w){
+  const src = w.SUMI, out = {styles: {}, sweeps: {}};
+  for (const [key, st] of Object.entries(src.styles)){
+    out.styles[key] = Object.assign({}, st, {theta: -135, kL: 0, ratio: 1, follow: 0, Rmax: FIT_RMAX}, FIT_STYLE[key]);
+    out.sweeps[key] = {};
+    for (const ch of Object.keys(src.sweeps[key])){
+      status.textContent = `Fitting ${st.label} · ${ch}…`;
+      const sw = await SumiFit.fitGlyph(src.sweeps[FIT_SOURCE][ch], st.font, ch);
+      out.sweeps[key][ch] = sw.map(s => s.map(([x, y, r]) => [x, y, Math.round(r / FIT_RMAX * 1000) / 1000]));
+    }
+  }
+  status.textContent = 'Exported.';
+  return `/* Fitted per-source brush styles and per-character sweeps (x, y, pressure in a 128 box; radius = pressure * Rmax).
+   Sweeps derived from KanjiVG (CC BY-SA 3.0, Ulrich Apel), refit by tools/fit.js to the medial axis and stroke width of
+   Yuji Syuku, Yuji Mai and Zen Kurenaido (SIL OFL). Regenerate with tools/contact-sheet.html → Export. */
+window.SUMI = ${JSON.stringify(out)};
+`;
+}
+window.buildSweepsJs = buildSweepsJs;
+const pct = v => (v * 100).toFixed(1) + '%';
+
+/* Crop the sheet box out of the bottom-up GL readback. */
+function cropSystem({box, dpr, w, h, px}){
+  const x0 = Math.round(box.x * dpr), y0 = Math.round(box.y * dpr), n = Math.round(box.size * dpr);
+  const c = document.createElement('canvas'); c.width = c.height = n;
+  const ctx = c.getContext('2d'), img = ctx.createImageData(n, n);
+  for (let y = 0; y < n; y++){
+    const sy = h - 1 - (y0 + y);
+    if (sy < 0 || sy >= h) continue;
+    img.data.set(px.subarray((sy * w + x0) * 4, (sy * w + x0 + n) * 4), y * n * 4);
+  }
+  ctx.putImageData(img, 0, 0);
+  return c;
+}
+
+/* Same layout as drawGhost() in sumi.js: em 0.9 of the box, ink box centred. */
+async function drawTarget(ch, font, n){
+  await document.fonts.load(`40px "${font}"`, ch);
+  const c = document.createElement('canvas'); c.width = c.height = n;
+  const x = c.getContext('2d');
+  x.fillStyle = '#fbf8f2'; x.fillRect(0, 0, n, n);
+  x.font = `${Math.floor(n * 0.9)}px "${font}", "Hiragino Mincho ProN", serif`;
+  const m = x.measureText(ch);
+  const gw = m.actualBoundingBoxLeft + m.actualBoundingBoxRight, gh = m.actualBoundingBoxAscent + m.actualBoundingBoxDescent;
+  x.fillStyle = '#26221c';
+  x.fillText(ch, (n - gw) / 2 + m.actualBoundingBoxLeft, (n - gh) / 2 + m.actualBoundingBoxAscent);
+  return c;
+}
+
+function lum(d, i){ return 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]; }
+function compare(tgt, sys){
+  const n = tgt.width;
+  const td = tgt.getContext('2d').getImageData(0, 0, n, n).data;
+  const sd = sys.getContext('2d').getImageData(0, 0, n, n).data;
+  // bare-paper brightness: a high percentile of the system crop, robust to paper grain
+  const ls = []; for (let i = 0; i < sd.length; i += 16) ls.push(lum(sd, i));
+  ls.sort((a, b) => a - b);
+  const paperL = ls[Math.floor(ls.length * 0.9)] || 255;
+  const d = document.createElement('canvas'); d.width = d.height = n;
+  const dx = d.getContext('2d'), img = dx.createImageData(n, n), o = img.data;
+  const C = {both:[38,34,28], miss:[210,70,45], extra:[47,111,208], none:[251,248,242]};
+  let both = 0, miss = 0, extra = 0;
+  for (let i = 0; i < td.length; i += 4){
+    const t = lum(td, i) < 128;
+    const s = 1 - lum(sd, i) / paperL > INK_THRESHOLD;
+    const k = t && s ? 'both' : t ? 'miss' : s ? 'extra' : 'none';
+    if (k === 'both') both++; else if (k === 'miss') miss++; else if (k === 'extra') extra++;
+    o[i] = C[k][0]; o[i + 1] = C[k][1]; o[i + 2] = C[k][2]; o[i + 3] = 255;
+  }
+  dx.putImageData(img, 0, 0);
+  const T = both + miss, S = both + extra;
+  return {diff: d, stats: {iou: both / Math.max(1, both + miss + extra), recall: both / Math.max(1, T),
+    precision: both / Math.max(1, S), miss: miss / Math.max(1, T), extra: extra / Math.max(1, T)}};
+}
+</script>
+</body>
+</html>

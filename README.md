@@ -34,7 +34,7 @@ Everything is in `public/sumi.js`. There are five GPU passes and one CPU-side br
 
 **Brush input (CPU).** Pointer events, including coalesced events, drive a smoothed brush tip. Width comes from speed, dwell time, remaining ink, and stylus pressure when available. The brush emits overlapping "dabs" along its path, and on release it extrapolates a tapered tail along its velocity and curvature. Ink load drops with distance and speed and partly recovers during pauses.
 
-**Dab pass.** Dabs are drawn as instanced quads into the simulation texture. Wet pigment is blended additively and water with `MAX`, so a resting brush pools ink but water doesn't pile up without limit.
+**Dab pass.** Dabs are drawn as instanced quads into the simulation texture. Wet pigment is blended additively and water with `MAX`, so a resting brush pools ink but water doesn't pile up without limit. Each dab carries pigment per unit area times its spacing, and each fragment divides that by the length of the run of dab centres that cover it (the footprint's chord along the motion, clipped to the stroke's start and end). Overlapping dabs therefore sum to a flat, fully covering body with crisp edges and solid caps, instead of piling up in the middle.
 
 **Dry map.** At startup the page builds a 320×2048 texture that stands in for a scanned dry-brush print. Its red channel holds about 160 bristles grouped into 8 tufts; each bristle wanders sideways and runs dry in its own rhythm. Its green channel holds the tuft groupings. Both channels are histogram-equalized, so a threshold of *t* leaves about (1 − *t*) of the area inked. Each dab samples the texture in stroke space, with across-brush position on one axis and distance along the stroke on the other. Dryness raises the threshold, pressure lowers it, and the edges of the brush dry first. As the brush dries or is pressed flat, the tufts separate. A dry, lightly pressed brush also skips the valleys of the paper grain. Thin "stray hairs" can leave the body of the stroke when the brush is dry, bent hard, or flicked.
 
@@ -42,9 +42,15 @@ Everything is in `public/sumi.js`. There are five GPU passes and one CPU-side br
 
 **Paper.** Procedural washi is baked once per resize: grain height, curved fibers, uneven thickness, and a few bark flecks.
 
-**Composite.** Ink density becomes color through a Beer–Lambert-style absorption curve with a shoulder, so thick ink reaches true black while thin ink stays a cool gray wash. Paper texture shows only through thin ink. Wet ink gets a slight darkening and a specular highlight based on the slope of its water surface. Seals are drawn with Canvas 2D and multiplied in with a mottled, uneven impression.
+**Composite.** Ink density becomes color through a Beer–Lambert-style absorption curve with a shoulder. Absorption is close to neutral, and dense ink keeps a soft warm-black floor that pooled ink sinks below, rather than printing flat black. Paper texture shows only through thin ink. Wet ink gets a slight darkening and a specular highlight based on the slope of its water surface. Seals are drawn with Canvas 2D and multiplied in with a mottled, uneven impression.
 
 If the browser can't render to half-float textures, the simulation falls back to 8-bit and loses some subtlety in the drying.
+
+**Written characters.** The practice guide's "write it" button replays a per-character sweep (centreline points with a radius) through the same brush. The sweeps start from KanjiVG stroke paths and are refit to each font by `tools/fit.js`: the whole character is scaled and shifted onto the glyph, each stroke slides to unclaimed ink nearby, the centreline snaps to the glyph's medial ridge, the radius comes from the glyph's distance transform (clamped where strokes cross), paths that cross paper are split, and stroke ends follow the ridge out to the glyph's own tips.
+
+## Tools
+
+`tools/contact-sheet.html` renders each character three ways: the font glyph (target), the brush replay after the paper has dried (system), and a diff of the two ink masks, with IoU, coverage and spill. Serve the repo root (`python3 -m http.server 8765`) and open `/tools/contact-sheet.html`. Add `?fit=1` to fit the sweeps on the fly, and use **Export refit sweeps.js** to regenerate `public/sweeps.js`. The page drives the app through a hook that only exists when `index.html` is opened with `?harness`. Nothing in `tools/` is deployed.
 
 ## References
 
