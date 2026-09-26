@@ -52,6 +52,10 @@ If the browser can't render to half-float textures, the simulation falls back to
 
 [`/tools/contact-sheet.html`](https://sumi.aure.onl/tools/contact-sheet.html) renders each character three ways: the font glyph (target), the brush replay after the paper has dried (system), and a diff of the two ink masks, with IoU, coverage and spill. Add `?chars=永心` to pick characters, `?fit=1` to fit the sweeps on the fly, and use **Export refit sweeps.js** to regenerate `public/sweeps.js`. The page drives the app through a hook that only exists when `index.html` is opened with `?harness`.
 
+**Bristle brush.** `public/brush.js` is a renderer-free brush model: a tuft of bristles around a spine whose tip trails the handle, with per-bristle ink, clumps that split apart into white streaks, staggered landing, speed lift, and a tip that flips over when pushed. It turns handle samples (position, pressure, time) into short capsule deposits that the engine stamps onto the wet paper. The live brush does not use it yet.
+
+[`/tools/brush-lab`](https://sumi.aure.onl/tools/brush-lab) plays scripted gestures through it in real time. [`/tools/brush-sheet`](https://sumi.aure.onl/tools/brush-sheet) renders a 4 × 4 grid (ensō, 永, a flourish and 道 at four ink loads) with sliders for the brush parameters; **Copy settings** copies the changed values as JSON.
+
 ## References
 
 - Nelson S.-H. Chu and Chiew-Lan Tai, "Real-Time Painting with an Expressive Virtual Chinese Brush," *IEEE Computer Graphics and Applications* 24(5), 2004. The dry map, split map, and paper-grain thresholding here follow this paper's approach.

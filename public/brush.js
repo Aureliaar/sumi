@@ -54,7 +54,7 @@ class Brush {
       const c = clamp(Math.floor((b + 1) / 2 * o.clumps), 0, o.clumps - 1);   // clumps are contiguous lanes across the tuft
       const cap = clumpCap[c] * (0.9 + 0.2 * R());
       this.B.push({a, b, c, cap, load: cap,
-        quit: 0.015 + 0.08 * R(),                  // fill below which this bristle stops laying ink
+        quit: 0.006 + 0.035 * R(),                 // fill below which this bristle stops laying ink
         land: R() * (0.45 + 0.55 * smooth(0.4, 1, Math.abs(b))),   // outer bristles land last
         rank: Math.abs(b) * 0.65 + R() * 0.35,     // central bristles are longest and touch first
         ja: R() * 2 - 1, jb: R() * 2 - 1, seed: R() * 97,
@@ -205,7 +205,7 @@ class Brush {
         amount: density * (landed ? r : seg), load: fill * (1 - 0.45 * fastF * fastF), water: inkF, seed: q.seed, press: p});
       // a drier bristle gives up its ink more slowly, so dry brush goes on long and broken rather than stopping
       q.load = Math.max(0, q.load - seg / o.radius * o.use * (1 + o.edgeUse * q.b * q.b) * (0.5 + 0.6 * clamp(p, 0, 1.2)) * q.cap
-        * (0.25 + 0.75 * smooth(0, 0.6, fill)));
+        * (0.12 + 0.88 * smooth(0, 0.6, fill)));
     }
   }
 }
