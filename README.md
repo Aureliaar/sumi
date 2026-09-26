@@ -16,19 +16,21 @@ The toolbar has a practice grid with a ghost character, three brush sizes, dark 
 
 ## Running locally
 
-Open `index.html` in a browser. To test on a phone on the same network, serve the folder:
+Open `public/index.html` in a browser. To test on a phone on the same network, serve the folder:
 
 ```sh
-python3 -m http.server 8000
+python3 -m http.server 8000 -d public
 ```
 
-## Publishing with GitHub Pages
+Or run it through Wrangler with `npm install` then `npm run dev`.
 
-Push the repo to GitHub, then go to **Settings → Pages**, choose **Deploy from a branch**, and select `main` with the `/ (root)` folder. The site appears at `https://<user>.github.io/<repo>/`.
+## Deploying
+
+The site is served as static assets by a Cloudflare Worker at https://sumi.aure.onl. Every push to `main` deploys through `.github/workflows/deploy.yml` (`wrangler deploy`), using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets. Everything the page serves lives in `public/`.
 
 ## How it works
 
-Everything is in `sumi.js`. There are five GPU passes and one CPU-side brush model.
+Everything is in `public/sumi.js`. There are five GPU passes and one CPU-side brush model.
 
 **Brush input (CPU).** Pointer events, including coalesced events, drive a smoothed brush tip. Width comes from speed, dwell time, remaining ink, and stylus pressure when available. The brush emits overlapping "dabs" along its path, and on release it extrapolates a tapered tail along its velocity and curvature. Ink load drops with distance and speed and partly recovers during pauses.
 

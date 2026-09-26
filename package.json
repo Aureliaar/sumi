@@ -1,0 +1,14 @@
+{
+  "name": "sumi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Real-time brush and ink calligraphy in WebGL 2, served as static assets on Cloudflare",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "check": "wrangler deploy --dry-run"
+  },
+  "devDependencies": {
+    "wrangler": "^4.141.0"
+  }
+}

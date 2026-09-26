@@ -1,0 +1,14 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "sumi",
+  "compatibility_date": "2026-09-27",
+
+  // Static site only: no worker script, public/ is served as-is.
+  "assets": { "directory": "./public" },
+
+  "routes": [
+    { "pattern": "sumi.aure.onl", "custom_domain": true }
+  ],
+  // Wrangler turns workers.dev off whenever routes are set and this is absent.
+  "workers_dev": true
+}
