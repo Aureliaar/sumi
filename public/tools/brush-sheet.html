@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brush Sheet</title>
+<style>
+  :root{--bg:#f4efe6;--fg:#26221c;--mute:#7a7266;--line:#d9d1c3}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,sans-serif;padding:20px 16px 40px}
+  h1{font-size:18px;margin:0 0 4px}
+  .sub{color:var(--mute);margin:0 0 14px;max-width:75ch}
+  .controls{display:flex;gap:8px;align-items:center;margin-bottom:14px}
+  button{font:inherit;padding:6px 12px;border:1px solid var(--fg);background:var(--fg);color:var(--bg);cursor:pointer}
+  button:disabled{opacity:.4;cursor:default}
+  #status{color:var(--mute)}
+  #grid{display:grid;grid-template-columns:auto repeat(4,minmax(0,1fr));gap:8px;max-width:1240px;align-items:center}
+  .ch{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.05em;text-align:center}
+  .rh{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.05em;writing-mode:vertical-rl;transform:rotate(180deg);text-align:center}
+  .cell{aspect-ratio:1;background:#ede8dd;border:1px solid var(--line);position:relative}
+  .cell img{display:block;width:100%;height:100%}
+  .cell span{position:absolute;left:6px;top:4px;font-size:11px;color:var(--mute)}
+  #frame{position:absolute;left:-10000px;top:0;width:560px;height:560px;border:0}
+</style>
+</head>
+<body>
+<h1>Brush sheet</h1>
+<p class="sub">Four drawings (rows) at four settings (columns), each through the bristle brush on wet paper and left to dry. The settings change the ink load and the speed of the same gesture.</p>
+<div class="controls"><button id="run" disabled>Render again</button><span id="status">Loading…</span></div>
+<div id="grid"></div>
+<iframe id="frame" src="../index.html?harness&amp;lab" aria-hidden="true" tabindex="-1"></iframe>
+<script src="sheet.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const frame = $('#frame'), grid = $('#grid'), status = $('#status'), run = $('#run');
+const {ROWS, COLS, cell} = SUMI_SHEET;
+grid.innerHTML = '<div></div>' + COLS.map(c => `<div class="ch">${c.name}</div>`).join('') +
+  ROWS.map((r, i) => `<div class="rh">${r.name}</div>` +
+    COLS.map((c, j) => `<div class="cell" id="c${i}${j}"><span>${i * 4 + j + 1}</span></div>`).join('')).join('');
+function toImage(r){
+  const c = document.createElement('canvas'); c.width = r.w; c.height = r.h;
+  const ctx = c.getContext('2d'), img = ctx.createImageData(r.w, r.h);
+  for (let y = 0; y < r.h; y++) img.data.set(r.px.subarray((r.h - 1 - y) * r.w * 4, (r.h - y) * r.w * 4), y * r.w * 4);
+  ctx.putImageData(img, 0, 0);
+  const im = new Image(); im.src = c.toDataURL('image/png'); im.alt = ''; return im;
+}
+async function render(){
+  const w = frame.contentWindow, {w: cw, h: ch} = w.__sumi.size();
+  run.disabled = true;
+  for (let i = 0; i < ROWS.length; i++) for (let j = 0; j < COLS.length; j++){
+    status.textContent = `Drawing ${i * 4 + j + 1} of 16…`;
+    const r = await w.__sumi.play(cell(i, j, cw, ch), {});
+    const el = $(`#c${i}${j}`), old = el.querySelector('img');
+    if (old) old.remove();
+    el.prepend(toImage(r));
+  }
+  status.textContent = 'Done.'; run.disabled = false;
+}
+frame.addEventListener('load', async () => {
+  const w = frame.contentWindow;
+  for (let i = 0; i < 100 && !w.__sumi; i++) await new Promise(r => setTimeout(r, 50));
+  if (!w.__sumi) { status.textContent = 'The brush did not start (WebGL 2 missing?).'; return; }
+  render();
+});
+run.addEventListener('click', render);
+</script>
+</body>
+</html>

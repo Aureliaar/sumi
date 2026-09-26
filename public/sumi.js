@@ -135,9 +135,9 @@ void main(){
     if (mb <= 0.001) discard;
     // dragged across the paper's hills, a dry bristle skips in long runs along its own path: the noise
     // runs along the bristle's arclength and is keyed to the bristle, so neighbours break independently
-    float drag = vnoise(vec2(sPix*0.02, vB.w*7.3 + lateral*0.25))*0.8 + grain*0.2;
+    float drag = vnoise(vec2(sPix*0.02, vB.w*7.3 + lateral*0.25));
     float gB = smoothstep(0.45, 1.0, dryness)*0.75;
-    mb *= smoothstep(gB - 0.06, gB + 0.03, drag);
+    mb *= smoothstep(gB - 0.02, gB + 0.02, drag);
     o = vec4(mb*perDab, 0., 0., mb*uWater*vC.w);
     return;
   }
@@ -189,7 +189,9 @@ void main(){
     vec4 n = texture(uState, uv2);
     float pn = permAt(texture(uPaper, uv2));
     wn[i] = n.a;
-    float gate = smoothstep(0.02, 0.22, max(w, n.a));
+    // water moves freely through wet paper but only creeps into dry paper (a slow wetting front), so
+    // edges keep a fine feathered bleed and narrow dry gaps inside a stroke stay open
+    float gate = smoothstep(0.02, 0.22, min(w, n.a))*0.85 + smoothstep(0.02, 0.22, max(w, n.a))*0.15;
     float f = uD*0.5*(perm+pn)*gate*(n.a - w);
     dW += f;
     float nc = min(n.r/max(n.a,1e-3), 3.);
@@ -1104,7 +1106,11 @@ async function playGestures(list, opt = {}){
       if (!brush || g.brush) brush = new SumiBrush.Brush(Object.assign({}, g.brush));
       if (g.dip !== undefined){ brush.blot(g.dip); brush.dip(g.dip); }
       const keys = g.keys, t0 = keys[0][0], t1 = keys[keys.length - 1][0];
-      for (let t = t0; t <= t1 + 1e-6; t += FRAME){
+      // frame times, always ending exactly on the last key so a lift really reaches zero pressure
+      const times = [];
+      for (let t = t0; t < t1 - 1e-6; t += FRAME) times.push(t);
+      times.push(t1);
+      for (const t of times){
         const [x, y, p] = SumiBrush.sampleKeys(keys, t);
         const deps = t === t0 ? brush.down(x, y, p) : brush.move(x, y, p, FRAME);
         for (const d of deps) pushInst(packBristle(d));
