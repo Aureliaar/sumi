@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brush Lab</title>
+<style>
+  :root{--bg:#f4efe6;--fg:#26221c;--mute:#7a7266;--line:#d9d1c3}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,sans-serif;padding:20px 16px 40px}
+  h1{font-size:18px;margin:0 0 4px}
+  .sub{color:var(--mute);margin:0 0 14px;max-width:70ch}
+  .controls{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+  button{font:inherit;padding:6px 12px;border:1px solid var(--fg);background:var(--fg);color:var(--bg);cursor:pointer}
+  button:disabled{opacity:.4;cursor:default}
+  #status{color:var(--mute)}
+  #frame{display:block;width:100%;max-width:1000px;aspect-ratio:1000/640;border:1px solid var(--line);background:#ede8dd}
+  ol{color:var(--mute);columns:2;max-width:1000px;padding-left:20px}
+</style>
+</head>
+<body>
+<h1>Brush lab</h1>
+<p class="sub">Scripted gestures through the bristle brush (<code>brush.js</code>), drawn in real time on the same wet paper as the app. The brush is a tuft of bristles whose tip trails the handle; each bristle carries its own ink.</p>
+<div class="controls"><button id="play" disabled>Play again</button><span id="status">Loading…</span></div>
+<iframe id="frame" src="../index.html?harness&amp;lab"></iframe>
+<ol id="list"></ol>
+<script src="gestures.js"></script>
+<script>
+const frame = document.querySelector('#frame'), status = document.querySelector('#status'), play = document.querySelector('#play');
+const Q = new URLSearchParams(location.search);
+async function run(){
+  const w = frame.contentWindow, {w: cw, h: ch} = w.__sumi.size();
+  const gs = SUMI_GESTURES(cw, ch);
+  document.querySelector('#list').innerHTML = gs.map(g => `<li>${g.name}</li>`).join('');
+  play.disabled = true; status.textContent = 'Drawing…';
+  await w.__sumi.play(gs, {realtime: !Q.has('still')});
+  status.textContent = 'Done. The paper keeps drying for a few seconds.'; play.disabled = false;
+}
+frame.addEventListener('load', async () => {
+  const w = frame.contentWindow;
+  for (let i = 0; i < 100 && !w.__sumi; i++) await new Promise(r => setTimeout(r, 50));
+  if (!w.__sumi) { status.textContent = 'The brush did not start (WebGL 2 missing?).'; return; }
+  await new Promise(r => setTimeout(r, 300));
+  run();
+});
+play.addEventListener('click', run);
+</script>
+</body>
+</html>

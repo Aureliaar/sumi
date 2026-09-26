@@ -61,7 +61,7 @@ void main(){
 const VS_DAB = `#version 300 es
 layout(location=0) in vec4 aA; // x, y, R (sim px), motion angle
 layout(location=1) in vec4 aB; // stroke distance, ink load, pigment amount, seed
-layout(location=2) in vec4 aC; // pressure, kind (0 body, 1 stray hair), hair lane, edge noise
+layout(location=2) in vec4 aC; // pressure, kind (0 body, 1 stray hair, 2 bristle), hair lane, edge noise (bristle: water)
 layout(location=3) in vec4 aD; // axis angle, tip distance L, tip radius, texture along-scale
 layout(location=4) in vec4 aE; // stroke start and end distance (sim px), unused, unused
 uniform vec2 uRes;
@@ -129,6 +129,18 @@ void main(){
   float gThr = smoothstep(0.35, 1.0, dryness)*clamp(1.35 - 0.6*press, 0.15, 1.);
   float tooth = smoothstep(gThr - 0.12, gThr + 0.04, grain);
 
+  // Bristle deposit from brush.js: a crisp capsule back to the bristle's previous position (a teardrop with equal radii)
+  if (vC.y > 1.5){
+    float mb = 1. - smoothstep(-0.6, 0.6, sd);
+    if (mb <= 0.001) discard;
+    // dragged across the paper's hills, a dry bristle skips in long runs along its own path: the noise
+    // runs along the bristle's arclength and is keyed to the bristle, so neighbours break independently
+    float drag = vnoise(vec2(sPix*0.02, vB.w*7.3 + lateral*0.25))*0.8 + grain*0.2;
+    float gB = smoothstep(0.45, 1.0, dryness)*0.75;
+    mb *= smoothstep(gB - 0.06, gB + 0.03, drag);
+    o = vec4(mb*perDab, 0., 0., mb*uWater*vC.w);
+    return;
+  }
   if (vC.y > 0.5){
     float mh = 1. - smoothstep(0.35, 1.0, q);
     if (mh <= 0.001) discard;
@@ -1063,7 +1075,59 @@ async function harnessRender(key, ch, opt = {}){
     harnessBusy = false; dirty = true;
   }
 }
-if (/[?&]harness\b/.test(location.search)) window.__sumi = {glyphs: GLYPHS, render: harnessRender};
+/* Gestures through the bristle brush (brush.js). Each gesture is {keys: [[t, x, y, p], ...] in css px
+   relative to the canvas, brush: options, dip, after}. Gestures play one after another. With realtime
+   the page animates them at wall-clock speed; otherwise they run on a fixed clock and the dried result
+   is read back like harnessRender. */
+function packBristle(d){
+  const k = V.sim;
+  return [d.x * k, (V.cssH - d.y) * k, d.r * k, -d.ang,
+          d.s * k, d.load, d.amount * k * TONES[toneKey].pig, d.seed,
+          d.press, 2, 0, d.water, -(d.ang + Math.PI), d.seg * k, d.r * k, 1,
+          d.s0 * k, 1e9, 0, 0];
+}
+async function playGestures(list, opt = {}){
+  harnessBusy = true;
+  try {
+    replay = null; dabCount = 0;
+    if (opt.clear !== false){ clearTarget(cur); clearTarget(nxt); seals = []; drawSeals(); }
+    const FRAME = 1000 / 60;
+    let brush = null, frameN = 0;
+    const tick = async () => {
+      drawDabs();
+      for (let k = 0; k < 3; k++) simStep();
+      frameN++;
+      if (opt.realtime){ composite(); await new Promise(requestAnimationFrame); }
+      else if (frameN % 60 === 0){ gl.finish(); await yieldTask(); }
+    };
+    for (const g of list){
+      if (!brush || g.brush) brush = new SumiBrush.Brush(Object.assign({}, g.brush));
+      if (g.dip !== undefined){ brush.blot(g.dip); brush.dip(g.dip); }
+      const keys = g.keys, t0 = keys[0][0], t1 = keys[keys.length - 1][0];
+      for (let t = t0; t <= t1 + 1e-6; t += FRAME){
+        const [x, y, p] = SumiBrush.sampleKeys(keys, t);
+        const deps = t === t0 ? brush.down(x, y, p) : brush.move(x, y, p, FRAME);
+        for (const d of deps) pushInst(packBristle(d));
+        await tick();
+      }
+      brush.up();
+      for (let t = 0; t < (g.after ?? 250); t += FRAME) await tick();
+    }
+    if (opt.realtime){ simUntil = performance.now() + 9000; composite(); return null; }   // the normal loop dries it
+    for (let t = 0; t < (opt.dry ?? 9000); t += FRAME) await tick();
+    composite();
+    const px = new Uint8Array(V.dW * V.dH * 4);
+    gl.readPixels(0, 0, V.dW, V.dH, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    return {dpr: V.dpr, w: V.dW, h: V.dH, cssW: V.cssW, cssH: V.cssH, px};
+  } finally {
+    harnessBusy = false; dirty = true;
+  }
+}
+if (/[?&]harness\b/.test(location.search)){
+  window.__sumi = {glyphs: GLYPHS, render: harnessRender, play: playGestures, size: () => ({w: V.cssW, h: V.cssH})};
+  if (/[?&]lab\b/.test(location.search)) document.documentElement.classList.add('lab');
+}
+
 
 resize();
 requestAnimationFrame(frame);

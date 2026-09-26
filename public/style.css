@@ -94,3 +94,5 @@ body{
 .sep{width:1px;height:22px;background:var(--bar-line);margin:0 3px;flex:none}
 @media (max-width:360px){ .bar button{width:40px} .sep{margin:0 1px} }
 @media (prefers-reduced-motion: reduce){ #guide,#hint,.bar button{transition:none} }
+/* brush lab: the page is driven by tools/brush-lab.html, so the controls stay out of the way */
+.lab .bar,.lab #hint,.lab #strip,.lab #guide{display:none!important}
