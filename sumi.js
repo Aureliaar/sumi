@@ -56,67 +56,84 @@ void main(){
 }`;
 
 // Brush dab, instanced. State layout: R wet pigment, G dry pigment, A water
+// Footprint = convex hull of the belly circle (radius R at the dab centre) and a tip circle
+// (radius rt) at distance L along the brush axis: a teardrop. L = 0 gives the old round dab.
 const VS_DAB = `#version 300 es
-layout(location=0) in vec4 aA; // x, y, r (sim px), angle
+layout(location=0) in vec4 aA; // x, y, R (sim px), motion angle
 layout(location=1) in vec4 aB; // stroke distance, ink load, pigment amount, seed
-layout(location=2) in vec4 aC; // pressure, kind (0 body, 1 stray hair), hair lane, unused
+layout(location=2) in vec4 aC; // pressure, kind (0 body, 1 stray hair), hair lane, edge noise
+layout(location=3) in vec4 aD; // axis angle, tip distance L, tip radius, texture along-scale
 uniform vec2 uRes;
-out vec2 vLocal; out vec4 vB; out vec4 vC; out float vR;
+out vec2 vP; out vec4 vB; out vec4 vC; out vec4 vD; out vec4 vM; out vec2 vU; out float vR;
 const vec2 Q[6] = vec2[6](vec2(-1,-1),vec2(1,-1),vec2(1,1),vec2(-1,-1),vec2(1,1),vec2(-1,1));
 void main(){
-  vec2 q = Q[gl_VertexID]*1.06;
-  float c = cos(aA.w), s = sin(aA.w);
-  vec2 w = aA.xy + aA.z*vec2(c*q.x - s*q.y, s*q.x + c*q.y);
-  vLocal = q; vB = aB; vC = aC; vR = aA.z;
-  gl_Position = vec4(w/uRes*2.-1., 0., 1.);
+  float R = aA.z, L = aD.y, rt = aD.z;
+  vec2 m = vec2(cos(aA.w), sin(aA.w));
+  vec2 ax = vec2(cos(aD.x), sin(aD.x));
+  float E = max(R, L + rt)*1.06 + 1.;
+  vP = Q[gl_VertexID]*E;
+  vec2 n = vec2(-m.y, m.x);
+  float an = dot(ax, n)*L;
+  float hi = max(R, an + rt), lo = min(-R, an - rt);
+  vU = vec2(0.5*(hi + lo), max(0.5*(hi - lo), 1e-3));
+  vB = aB; vC = aC; vD = aD; vM = vec4(m, ax); vR = R;
+  gl_Position = vec4((aA.xy + vP)/uRes*2.-1., 0., 1.);
 }`;
 // Texture-driven deposit: R = bristle height field ("dry map"), G = tuft clump field ("split map")
 const FS_DAB = HEAD + NOISE + `
-in vec2 vLocal; in vec4 vB; in vec4 vC; in float vR; out vec4 o;
-uniform float uWater, uBaseR; uniform vec2 uSimRes;
+in vec2 vP; in vec4 vB; in vec4 vC; in vec4 vD; in vec4 vM; in vec2 vU; in float vR; out vec4 o;
+uniform float uWater; uniform vec2 uSimRes;
 uniform sampler2D uBristle, uPaper;
+float sdTear(vec2 p, float R, float r, float h){
+  p.x = abs(p.x);
+  if (h <= abs(R - r) + 1e-4) return min(length(p) - R, length(p - vec2(0., h)) - r);
+  float b = (R - r)/h, a = sqrt(max(1. - b*b, 0.));
+  float k = dot(p, vec2(-b, a));
+  if (k < 0.) return length(p) - R;
+  if (k > a*h) return length(p - vec2(0., h)) - r;
+  return dot(p, vec2(a, b)) - R;
+}
 void main(){
-  float r = length(vLocal);
-  float sPix = vB.x + vLocal.x*vR;
+  vec2 m = vM.xy, ax = vM.zw, n = vec2(-m.y, m.x);
+  float along = dot(vP, m), lateral = dot(vP, n);
+  float sd = sdTear(vec2(dot(vP, vec2(ax.y, -ax.x)), dot(vP, ax)), vR, vD.z, vD.y);
+  float q = sd/vR + 1.;
+  float sPix = vB.x + along;
   float load = vB.y;
   float dryness = clamp(1.-load, 0., 1.);
   float press = vC.x;
-  float along = sPix/(uBaseR*60.) + vB.w*0.37;
+  float alongT = sPix/vD.w + vB.w*0.37;
 
-  // Paper tooth: a dry, lightly pressed brush only touches the grain peaks
   float grain = clamp((texture(uPaper, gl_FragCoord.xy/uSimRes).r - 0.28)/0.44, 0., 1.);
   float gThr = smoothstep(0.35, 1.0, dryness)*clamp(1.35 - 0.6*press, 0.15, 1.);
   float tooth = smoothstep(gThr - 0.12, gThr + 0.04, grain);
 
   if (vC.y > 0.5){
-    // Stray hair: one thin bristle, broken along its length by its own texture column
-    float m = 1. - smoothstep(0.35, 1.0, r);
-    if (m <= 0.001) discard;
-    float brk = texture(uBristle, vec2(vC.z, along*1.7)).r;
-    m *= smoothstep(0.12, 0.28, brk)*mix(1., tooth, 0.7);
-    o = vec4(m*vB.z, 0., 0., m*uWater*0.3);
+    float mh = 1. - smoothstep(0.35, 1.0, q);
+    if (mh <= 0.001) discard;
+    float brk = texture(uBristle, vec2(vC.z, alongT*1.7)).r;
+    mh *= smoothstep(0.12, 0.28, brk)*mix(1., tooth, 0.7);
+    o = vec4(mh*vB.z, 0., 0., mh*uWater*0.3);
     return;
   }
 
-  float u = vLocal.y;
+  float u = (lateral - vU.x)/vU.y;
   float edgeN = vnoise(vec2(u*6. + vB.w, sPix*0.05));
-  float mask = 1. - smoothstep(0.62, 1.0, r + (edgeN-0.5)*0.18);
+  float mask = 1. - smoothstep(0.62, 1.0, q + (edgeN - 0.5)*vC.w);
   if (mask <= 0.001) discard;
-  vec4 br = texture(uBristle, vec2(u*0.5 + 0.5, along));
+  vec4 br = texture(uBristle, vec2(u*0.5 + 0.5, alongT));
 
-  // Dry map threshold: moisture raises it, pressure lowers it, edges dry first
   float thr = -0.15 + 1.05*smoothstep(0.12, 0.95, dryness);
   thr -= clamp(press - 0.85, -0.45, 0.8)*0.4*(0.4 + dryness);
   thr += smoothstep(0.55, 1., abs(u))*dryness*0.35;
   float streak = smoothstep(thr - 0.05, thr + 0.05, br.r);
 
-  // Split map: tufts separate as the brush dries or is pressed flat
   float sThr = dryness*0.5 + max(press - 1.1, 0.)*0.3 - 0.12;
   float split = smoothstep(sThr - 0.1, sThr + 0.1, br.g);
 
-  float m = streak*split*tooth;
+  float mm = streak*split*tooth;
   float fine = 0.8 + 0.2*br.r;
-  o = vec4(mask*m*fine*vB.z, 0., 0., mask*mix(1., m, 0.85)*uWater*mix(0.3, 1., load));
+  o = vec4(mask*mm*fine*vB.z, 0., 0., mask*mix(1., mm, 0.85)*uWater*mix(0.3, 1., load));
 }`;
 
 // Wet-media step: capillary flow through fibers, pigment transport, edge-driven drying, granulating deposit
@@ -302,18 +319,13 @@ const dabVAO = gl.createVertexArray();
 const dabBuf = gl.createBuffer();
 gl.bindVertexArray(dabVAO);
 gl.bindBuffer(gl.ARRAY_BUFFER, dabBuf);
-gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 48, 0); gl.vertexAttribDivisor(0, 1);
-gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 48, 16); gl.vertexAttribDivisor(1, 1);
-gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 48, 32); gl.vertexAttribDivisor(2, 1);
+for (let i = 0; i < 4; i++){ gl.enableVertexAttribArray(i); gl.vertexAttribPointer(i, 4, gl.FLOAT, false, 64, 16 * i); gl.vertexAttribDivisor(i, 1); }
 gl.bindVertexArray(null);
-const DAB_F = 12;
+const DAB_F = 16;
 let dabData = new Float32Array(DAB_F * 4096), dabCount = 0;
-function pushDab(a, b, c, d, e, f, g, h, i, j, k){
+function pushInst(v){
   if ((dabCount + 1) * DAB_F > dabData.length){ const n = new Float32Array(dabData.length * 2); n.set(dabData); dabData = n; }
-  const o = dabCount * DAB_F;
-  dabData[o]=a; dabData[o+1]=b; dabData[o+2]=c; dabData[o+3]=d;
-  dabData[o+4]=e; dabData[o+5]=f; dabData[o+6]=g; dabData[o+7]=h;
-  dabData[o+8]=i; dabData[o+9]=j; dabData[o+10]=k; dabData[o+11]=0;
+  dabData.set(v, dabCount * DAB_F);
   dabCount++;
 }
 
@@ -322,7 +334,7 @@ const TONES = { dark:{pig:1.0, water:0.85, decay:1.0}, light:{pig:0.24, water:1.
 let toneKey = 'dark';
 const SIZES = [0.012, 0.02, 0.032], SIZE_NAMES = ['fine','medium','bold'], SIZE_DOT = [3, 5, 7.5];
 let sizeIdx = 1;
-const GLYPHS = ['永','心','道','風','夢','和','山','花','書','愛'];
+const GLYPHS = [...'永心道風夢和山花書愛水火木月日人力空雨春'];
 let glyphIdx = 0;
 const PAPER_SEED = Math.random() * 10;
 
@@ -428,7 +440,6 @@ function drawDabs(){
   gl.useProgram(P.dab.p);
   gl.uniform2f(P.dab.u.uRes, V.sW, V.sH);
   gl.uniform1f(P.dab.u.uWater, TONES[toneKey].water);
-  gl.uniform1f(P.dab.u.uBaseR, V.baseR * V.sim);
   gl.uniform2f(P.dab.u.uSimRes, V.sW, V.sH);
   bindTex(0, bristleTex, P.dab.u.uBristle);
   bindTex(1, paper.t, P.dab.u.uPaper);
@@ -520,6 +531,105 @@ function scheduleResize(){ clearTimeout(resizeTimer); resizeTimer = setTimeout(r
 window.addEventListener('resize', scheduleResize);
 if (window.visualViewport) window.visualViewport.addEventListener('resize', scheduleResize);
 
+/* ---------- replay: sweeps with pressure -> dabs ----------
+   Pure functions, shared verbatim by the page and the offline test harness.
+   A sweep is [stroke, ...]; a stroke is [[x, y, p], ...] control points in a 128-unit box.
+   A style holds the only tunable parameters, one set per source. */
+const ENGINE = { qVis: 0.813, bleed: 2.25 };   // calibrated: soft dab edge and wet-paper bleed, in sim px
+function catmullSweep(ctrl, step){
+  const n = ctrl.length, P = [];
+  P.push(ctrl[0].map((v, j) => 2 * v - ctrl[1][j]));
+  for (const c of ctrl) P.push(c);
+  P.push(ctrl[n - 1].map((v, j) => 2 * v - ctrl[n - 2][j]));
+  const pts = [];
+  for (let i = 1; i < P.length - 2; i++){
+    const p0 = P[i - 1], p1 = P[i], p2 = P[i + 1], p3 = P[i + 2];
+    const seg = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+    const m = Math.max(2, Math.floor(seg / step * 2));
+    for (let k = 0; k < m; k++){
+      const t = k / m, t2 = t * t, t3 = t2 * t;
+      pts.push([0, 1, 2].map(j => 0.5 * (2 * p1[j] + (-p0[j] + p2[j]) * t + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * t2 + (-p0[j] + 3 * p1[j] - 3 * p2[j] + p3[j]) * t3)));
+    }
+  }
+  pts.push(P[P.length - 2].slice());
+  // resample by arclength
+  const d = [0];
+  for (let i = 1; i < pts.length; i++) d.push(d[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  const total = d[d.length - 1], cnt = Math.max(2, Math.floor(total / step) + 1), out = [];
+  let j = 0;
+  for (let i = 0; i < cnt; i++){
+    const s = total * i / (cnt - 1);
+    while (j < d.length - 2 && d[j + 1] < s) j++;
+    const f = d[j + 1] > d[j] ? (s - d[j]) / (d[j + 1] - d[j]) : 0;
+    out.push([0, 1, 2].map(k => pts[j][k] + (pts[j + 1][k] - pts[j][k]) * f));
+  }
+  return out;
+}
+function styleAxis(style, tx, ty){
+  const th = style.theta * Math.PI / 180, f = style.follow;
+  let ax = Math.cos(th) * (1 - f) - tx * f, ay = Math.sin(th) * (1 - f) - ty * f;
+  const l = Math.hypot(ax, ay) || 1;
+  return [ax / l, ay / l];
+}
+/* Returns dab records in css px (y down) with timestamps in ms. */
+function sweepToDabs(sweep, style, box, simScale){
+  const k = box.size / 128, out = [];
+  let t = 0, load = 1, lastEnd = -1e9, s = 0;
+  const seedBase = 13.7;
+  sweep.forEach((ctrl, si) => {
+    if (ctrl.length < 2) return;
+    const q = catmullSweep(ctrl, 0.5);
+    load = Math.min(1, load + 0.3 + (t - lastEnd) / 1500);
+    const seed = (seedBase + si * 17.31) % 97;
+    let acc = 1e9;   // emit the first point immediately
+    for (let i = 0; i < q.length; i++){
+      const a = q[Math.max(0, i - 1)], b = q[Math.min(q.length - 1, i + 1)];
+      let tx = b[0] - a[0], ty = b[1] - a[1]; const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+      const seg = i ? Math.hypot(q[i][0] - q[i - 1][0], q[i][1] - q[i - 1][1]) : 0;
+      t += seg / style.pace;
+      load = Math.max(0, load - seg * style.inkDecay);
+      s += seg * k; acc += seg * k;
+      const Rbox = Math.max(Math.min(Math.max(q[i][2], 0), 1.4) * style.Rmax, 0.35);
+      // geometric footprint radius (css px) -> engine radius that renders at that visible size
+      const Rgeo = Rbox * k;
+      const Rsim = Math.max((Rgeo * simScale - ENGINE.bleed) / ENGINE.qVis, 0.6);
+      const R = Rsim / simScale;
+      const spacing = Math.max(0.5, 0.1 * R);
+      if (acc < spacing && i !== q.length - 1) continue;
+      const [axx, axy] = styleAxis(style, tx, ty);
+      out.push({x: box.x + q[i][0] * k, y: box.y + q[i][1] * k, R, L: style.kL * R, rt: style.ratio * R,
+        ang: Math.atan2(ty, tx), axis: Math.atan2(axy, axx), s, load, spacing: Math.min(acc, spacing * 2), seed,
+        press: Math.min(2, Math.max(0.2, q[i][2] / 0.6)), t});
+      acc = 0;
+    }
+    lastEnd = t; t += style.pause;
+  });
+  return out;
+}
+/* Footprint extent along a direction, for pigment normalisation and bristle mapping. */
+function footprintSpan(R, L, rt, axis, dirAng){
+  const c = Math.cos(axis - dirAng) * L;
+  return [Math.min(-R, c - rt), Math.max(R, c + rt)];
+}
+/* Pack one record into the 16-float instance layout (sim px, y up, angles negated). */
+function packDab(d, V, pig, style, texScale){
+  const k = V.sim;
+  const [lo, hi] = footprintSpan(d.R, d.L, d.rt, d.axis, d.ang);
+  const amount = pig * (0.55 + 0.45 * d.load) * d.spacing / (0.85 * (hi - lo));
+  return [d.x * k, (V.cssH - d.y) * k, d.R * k, -d.ang,
+          d.s * k, d.load, amount, d.seed,
+          d.press, 0, 0, style.edge,
+          -d.axis, d.L * k, d.rt * k, texScale];
+}
+
+/* Brush styles: one parameter set per source. "free" is the original round brush. */
+const STYLES = Object.assign({
+  free: {label:'Free brush', short:'筆', font:'Yuji Syuku', theta:-135, kL:0, ratio:1, follow:0, edge:0.18,
+         Rmax:6, pace:0.35, pause:150, inkDecay:0.002, texScale:8}
+}, (window.SUMI && SUMI.styles) || {});
+const STYLE_KEYS = Object.keys(STYLES);
+let styleKey = 'free';
+
 /* ---------- brush physics ---------- */
 function radiusTarget(){
   const spF = clamp(1.25 - 0.36 * S.speed, 0.36, 1.25);
@@ -527,11 +637,17 @@ function radiusTarget(){
   return V.baseR * spF * prF * (1 + 0.45 * S.dwell) * (0.8 + 0.2 * S.load);
 }
 function emitDab(x, y, r, ang, s, load, spacing, kind = 0, lane = 0, amt = 1, press = -1){
-  const k = V.sim, t = TONES[toneKey];
+  const k = V.sim, t = TONES[toneKey], st = STYLES[styleKey];
   const rr = Math.max(r, 0.35);
   const pr = press >= 0 ? press : clamp(rr / V.baseR, 0.2, 2);
-  const amount = amt * t.pig * (0.55 + 0.45 * load) * (1 - Math.min(0.35, S.speed * 0.12)) * spacing / (1.7 * rr);
-  pushDab(x * k, (V.cssH - y) * k, Math.max(rr * k, 0.8), -ang, s * k, load, amount, S.seed, pr, kind, lane);
+  const body = kind === 0;
+  const L = body ? st.kL * rr : 0, rt = body ? st.ratio * rr : rr;
+  const [axx, axy] = styleAxis(st, Math.cos(ang), Math.sin(ang));
+  const axis = Math.atan2(axy, axx);
+  const [lo, hi] = footprintSpan(rr, L, rt, axis, ang);
+  const amount = amt * t.pig * (0.55 + 0.45 * load) * (1 - Math.min(0.35, S.speed * 0.12)) * spacing / (0.85 * (hi - lo));
+  pushInst([x * k, (V.cssH - y) * k, Math.max(rr * k, 0.8), -ang, s * k, load, amount, S.seed,
+            pr, kind, lane, st.edge, -axis, L * k, rt * k, V.baseR * k * 60]);
 }
 // Stray hairs: thin satellite tufts that leave the body of the brush when it is dry,
 // pressed flat, bent hard, or flicked off the paper. Each follows its own drifting path.
@@ -646,6 +762,7 @@ function pushUndo(e){
 }
 function doUndo(){
   if (S.down) return;
+  replay = null;
   const e = undo.pop();
   if (!e) return;
   dabCount = 0;
@@ -659,6 +776,7 @@ function doUndo(){
 }
 function newSheet(){
   if (S.down) return;
+  replay = null;
   drawDabs();
   pushUndo({kind:'clear', t: takeSnap(), seals: seals.slice()});
   clearTarget(cur); clearTarget(nxt);
@@ -774,19 +892,73 @@ canvas.addEventListener('contextmenu', e => e.preventDefault());
 
 /* ---------- toolbar ---------- */
 const bGuide = $('#bGuide'), bNext = $('#bNext'), bSize = $('#bSize'), bTone = $('#bTone'), bSeal = $('#bSeal');
+const bStyle = $('#bStyle'), bPlay = $('#bPlay'), strip = $('#strip'), stripLabel = $('#stripLabel'), sheet = $('.sheet');
 const guide = $('#guide'), glyph = $('#glyph'), sizeDot = $('#sizeDot'), toneDot = $('#toneDot');
 
+/* Ghost character, laid out exactly like the fitting targets: em size 0.9 of the box, ink box centred. */
+function drawGhost(){
+  const st = STYLES[styleKey], ch = GLYPHS[glyphIdx];
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const size = sheet.clientWidth, px = Math.round(size * dpr);
+  if (!px) return;
+  const draw = () => {
+    glyph.width = px; glyph.height = px;
+    const c = glyph.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, size, size);
+    c.font = `${Math.floor(size * 0.9)}px "${st.font}", "Hiragino Mincho ProN", serif`;
+    c.textBaseline = 'alphabetic'; c.textAlign = 'left';
+    const m = c.measureText(ch);
+    const w = m.actualBoundingBoxLeft + m.actualBoundingBoxRight, h = m.actualBoundingBoxAscent + m.actualBoundingBoxDescent;
+    c.fillStyle = 'rgba(38,34,28,0.085)';
+    c.fillText(ch, (size - w) / 2 + m.actualBoundingBoxLeft, (size - h) / 2 + m.actualBoundingBoxAscent);
+  };
+  draw();
+  document.fonts.load(`40px "${st.font}"`, ch).then(draw, () => {});
+}
+function updatePractice(){
+  const st = STYLES[styleKey];
+  stripLabel.textContent = `${st.label} · ${GLYPHS[glyphIdx]}`;
+  bGuide.querySelector('.g').textContent = GLYPHS[glyphIdx];
+  $('#styleGlyph').textContent = st.short;
+  bStyle.setAttribute('aria-label', `Brush style: ${st.label}`);
+  if (guide.classList.contains('on')) drawGhost();
+}
 bGuide.addEventListener('click', () => {
   const on = bGuide.getAttribute('aria-pressed') !== 'true';
   bGuide.setAttribute('aria-pressed', String(on));
   guide.classList.toggle('on', on);
-  bNext.hidden = !on;
+  strip.hidden = !on;
+  if (on) updatePractice();
 });
 bNext.addEventListener('click', () => {
   glyphIdx = (glyphIdx + 1) % GLYPHS.length;
-  glyph.textContent = GLYPHS[glyphIdx];
-  bGuide.querySelector('.g').textContent = GLYPHS[glyphIdx];
+  updatePractice();
 });
+bStyle.addEventListener('click', () => {
+  drawDabs();
+  styleKey = STYLE_KEYS[(STYLE_KEYS.indexOf(styleKey) + 1) % STYLE_KEYS.length];
+  updatePractice();
+});
+/* Replay: the fitted sweep for this character goes through the same brush you draw with.
+   The free brush replays the Yuji Syuku sweeps with the original round footprint, for comparison. */
+let replay = null;
+function startReplay(){
+  if (S.down) return;
+  const src = (window.SUMI && SUMI.sweeps[styleKey]) ? styleKey : 'syuku';
+  const sw = window.SUMI && SUMI.sweeps[src] && SUMI.sweeps[src][GLYPHS[glyphIdx]];
+  if (!sw) { showHint('No recorded sweep for this character yet.'); return; }
+  const r = sheet.getBoundingClientRect(), cr = canvas.getBoundingClientRect();
+  const cur = STYLES[styleKey];
+  const style = Object.assign({}, STYLES[src], styleKey === src ? {} :
+    {theta: cur.theta, kL: cur.kL, ratio: cur.ratio, follow: cur.follow, edge: cur.edge});
+  drawDabs();
+  pushUndo({kind:'stroke', t: takeSnap()});
+  replay = {recs: sweepToDabs(sw, style, {x: r.left - cr.left, y: r.top - cr.top, size: r.width}, V.sim), i: 0, t0: performance.now(), style};
+  hideHint();
+}
+bPlay.addEventListener('click', startReplay);
+window.addEventListener('resize', () => { if (guide.classList.contains('on')) drawGhost(); });
 bSize.addEventListener('click', () => {
   drawDabs();
   sizeIdx = (sizeIdx + 1) % SIZES.length;
@@ -818,6 +990,11 @@ window.addEventListener('keydown', e => {
 /* ---------- loop ---------- */
 function frame(now){
   requestAnimationFrame(frame);
+  if (replay){
+    const el = now - replay.t0, pig = TONES[toneKey].pig, ts = replay.style.texScale * V.sim;
+    while (replay.i < replay.recs.length && replay.recs[replay.i].t <= el){ pushInst(packDab(replay.recs[replay.i], V, pig, replay.style, ts)); replay.i++; }
+    if (replay.i >= replay.recs.length) replay = null;
+  }
   if (S.down && now - S.lastT > 12) advance(now);
   drawDabs();
   if (now < simUntil){ for (let i = 0; i < 3; i++) simStep(); dirty = true; }

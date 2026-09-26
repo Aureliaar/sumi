@@ -40,11 +40,11 @@ body{
 
 #guide{position:fixed;inset:0;display:grid;place-items:center;pointer-events:none;opacity:0;transition:opacity .35s ease;mix-blend-mode:multiply}
 #guide.on{opacity:1}
-.sheet{position:relative;width:min(80vw,60vh);aspect-ratio:1;margin-bottom:70px}
+.sheet{position:relative;width:min(80vw,56vh);aspect-ratio:1;margin-bottom:130px}
 .sheet svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
 .sheet line,.sheet rect{stroke:rgba(194,58,34,.34);stroke-width:1;vector-effect:non-scaling-stroke;fill:none}
 .sheet line{stroke-dasharray:5 6}
-.glyph{position:absolute;inset:0;display:grid;place-items:center;font-family:"Yuji Syuku","Hiragino Mincho ProN",serif;font-size:calc(min(80vw,60vh)*.8);line-height:1;color:rgba(38,34,28,.085)}
+.glyph{position:absolute;inset:0;width:100%;height:100%}
 
 #hint{
   position:fixed;left:50%;transform:translateX(-50%);
@@ -64,12 +64,24 @@ body{
   border:1px solid var(--bar-line);border-radius:999px;box-shadow:var(--shadow);
   max-width:calc(100vw - 16px);
 }
-.bar button{
+.bar button,.strip button{
   appearance:none;border:0;margin:0;padding:0;background:transparent;color:inherit;
   width:44px;height:44px;border-radius:999px;display:grid;place-items:center;cursor:pointer;
   touch-action:manipulation;font:inherit;transition:background-color .15s ease,color .15s ease;
 }
 .bar button[hidden]{display:none}
+.strip{
+  position:fixed;left:50%;transform:translateX(-50%);
+  bottom:calc(72px + env(safe-area-inset-bottom,0px));
+  display:flex;align-items:center;gap:2px;padding:4px;
+  background:var(--bar-bg);color:var(--bar-ink);
+  -webkit-backdrop-filter:blur(16px) saturate(1.2);backdrop-filter:blur(16px) saturate(1.2);
+  border:1px solid var(--bar-line);border-radius:999px;box-shadow:var(--shadow);
+}
+.strip[hidden]{display:none}
+.strip-label{font-size:14px;padding:0 8px;white-space:nowrap}
+.strip button:focus-visible{outline:2px solid var(--shu);outline-offset:1px}
+.strip svg{width:24px;height:24px}
 .bar button:disabled{opacity:.32;cursor:default}
 .bar button[aria-pressed="true"]{background:var(--active-bg);color:var(--active-ink)}
 .bar button:focus-visible{outline:2px solid var(--shu);outline-offset:1px}

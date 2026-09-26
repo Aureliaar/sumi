@@ -8,7 +8,7 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🖌️</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Yuji+Syuku&family=Shippori+Mincho:wght@500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Yuji+Syuku&family=Yuji+Mai&family=Zen+Kurenaido&family=Shippori+Mincho:wght@500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -23,17 +23,24 @@
       <line x1="0" y1="0" x2="100" y2="100"/>
       <line x1="100" y1="0" x2="0" y2="100"/>
     </svg>
-    <div class="glyph" id="glyph">永</div>
+    <canvas class="glyph" id="glyph"></canvas>
   </div>
 </div>
 
 <p id="hint">Press and drag to write. Slow strokes swell, quick ones thin out, and lifting mid‑stroke flicks a tail.</p>
 
-<nav class="bar" aria-label="Brush tools">
-  <button id="bGuide" aria-pressed="false" aria-label="Practice guide" title="Practice guide"><span class="g">永</span></button>
-  <button id="bNext" hidden aria-label="Next practice character" title="Next character">
+<div class="strip" id="strip" hidden>
+  <button id="bNext" aria-label="Next practice character" title="Next character">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4.2h-4.2"/></svg>
   </button>
+  <span class="strip-label" id="stripLabel">Free brush</span>
+  <button id="bPlay" aria-label="Write this character" title="Write it">
+    <svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></svg>
+  </button>
+</div>
+
+<nav class="bar" aria-label="Brush tools">
+  <button id="bGuide" aria-pressed="false" aria-label="Practice guide" title="Practice guide"><span class="g">永</span></button>
   <span class="sep"></span>
   <button id="bSize" aria-label="Brush size: medium" title="Brush size">
     <svg viewBox="0 0 24 24"><circle id="sizeDot" cx="12" cy="12" r="5" fill="currentColor"/></svg>
@@ -41,6 +48,7 @@
   <button id="bTone" aria-label="Ink: dark" title="Ink strength">
     <svg viewBox="0 0 24 24"><circle id="toneDot" cx="12" cy="12" r="7" fill="currentColor" stroke="currentColor" stroke-width="1.4"/></svg>
   </button>
+  <button id="bStyle" aria-label="Brush style: Free brush" title="Brush style"><span class="g" id="styleGlyph">筆</span></button>
   <span class="sep"></span>
   <button id="bSeal" aria-pressed="false" aria-label="Press a seal" title="Seal"><span class="seal-ico">印</span></button>
   <span class="sep"></span>
@@ -52,6 +60,7 @@
   </button>
 </nav>
 
+<script src="sweeps.js"></script>
 <script src="sumi.js"></script>
 </body>
 </html>
