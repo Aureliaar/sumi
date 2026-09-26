@@ -49,7 +49,7 @@
 </div>
 <div id="out"></div>
 
-<details open><summary>Live brush (must stay rendered while the sheet builds)</summary><iframe id="frame" src="../public/index.html?harness"></iframe></details>
+<details open><summary>Live brush (must stay rendered while the sheet builds)</summary><iframe id="frame" src="../index.html?harness"></iframe></details>
 
 <script src="fit.js"></script>
 <script>
@@ -127,8 +127,8 @@ async function buildSweepsJs(w){
   }
   status.textContent = 'Exported.';
   return `/* Fitted per-source brush styles and per-character sweeps (x, y, pressure in a 128 box; radius = pressure * Rmax).
-   Sweeps derived from KanjiVG (CC BY-SA 3.0, Ulrich Apel), refit by tools/fit.js to the medial axis and stroke width of
-   Yuji Syuku, Yuji Mai and Zen Kurenaido (SIL OFL). Regenerate with tools/contact-sheet.html → Export. */
+   Sweeps derived from KanjiVG (CC BY-SA 3.0, Ulrich Apel), refit by public/tools/fit.js to the medial axis and stroke width of
+   Yuji Syuku, Yuji Mai and Zen Kurenaido (SIL OFL). Regenerate with /tools/contact-sheet.html → Export. */
 window.SUMI = ${JSON.stringify(out)};
 `;
 }

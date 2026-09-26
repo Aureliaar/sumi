@@ -46,11 +46,11 @@ Everything is in `public/sumi.js`. There are five GPU passes and one CPU-side br
 
 If the browser can't render to half-float textures, the simulation falls back to 8-bit and loses some subtlety in the drying.
 
-**Written characters.** The practice guide's "write it" button replays a per-character sweep (centreline points with a radius) through the same brush. The sweeps start from KanjiVG stroke paths and are refit to each font by `tools/fit.js`: the whole character is scaled and shifted onto the glyph, each stroke slides to unclaimed ink nearby, the centreline snaps to the glyph's medial ridge, the radius comes from the glyph's distance transform (clamped where strokes cross), paths that cross paper are split, and stroke ends follow the ridge out to the glyph's own tips.
+**Written characters.** The practice guide's "write it" button replays a per-character sweep (centreline points with a radius) through the same brush. The sweeps start from KanjiVG stroke paths and are refit to each font by `public/tools/fit.js`: the whole character is scaled and shifted onto the glyph, each stroke slides to unclaimed ink nearby, the centreline snaps to the glyph's medial ridge, the radius comes from the glyph's distance transform (clamped where strokes cross), paths that cross paper are split, and stroke ends follow the ridge out to the glyph's own tips.
 
 ## Tools
 
-`tools/contact-sheet.html` renders each character three ways: the font glyph (target), the brush replay after the paper has dried (system), and a diff of the two ink masks, with IoU, coverage and spill. Serve the repo root (`python3 -m http.server 8765`) and open `/tools/contact-sheet.html`. Add `?fit=1` to fit the sweeps on the fly, and use **Export refit sweeps.js** to regenerate `public/sweeps.js`. The page drives the app through a hook that only exists when `index.html` is opened with `?harness`. Nothing in `tools/` is deployed.
+[`/tools/contact-sheet.html`](https://sumi.aure.onl/tools/contact-sheet.html) renders each character three ways: the font glyph (target), the brush replay after the paper has dried (system), and a diff of the two ink masks, with IoU, coverage and spill. Add `?chars=永心` to pick characters, `?fit=1` to fit the sweeps on the fly, and use **Export refit sweeps.js** to regenerate `public/sweeps.js`. The page drives the app through a hook that only exists when `index.html` is opened with `?harness`.
 
 ## References
 
